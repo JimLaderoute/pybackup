@@ -1,0 +1,30 @@
+# Folders to get backed up
+# My DELL Windows10 2021 computer's USERPROFILE env variable points to C:\Users\wheez
+#
+set FROM1 $USERPROFILE
+set FROM2 D:/JamesLaderoute
+set TO1 F:/backups/photos-hp
+set TO2 F:/backups/scotty/
+
+destination $TO1
+mode relative
+
+$FROM1/AppData/Local/Microsoft
+$FROM1/Pictures
+$FROM1/Documents
+$FROM1/Videos
+$FROM1/Desktop
+$FROM1/Music
+
+destination $TO2
+mode substitute
+
+$FROM2/Documents
+$FROM2/HP_Install_Kits
+#$FROM2/Installations
+$FROM2/Music
+$FROM2/MyHardware
+$FROM2/MySoftware
+$FROM2/Pictures
+
+
