@@ -10,7 +10,9 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import filedialog
 import os
+import Pmw
 import re # to use regular expressions
+import shutil
 
 releaseTitle = "BackupComputer"
 releaseVersion = "1.0"
@@ -20,39 +22,64 @@ class myVar():
         self.name = uname
         self.value = uvalue
 
-myVarList = []
-commandList = []
-defaultBackupFile=""
-basePath = os.path.dirname(os.path.realpath(__file__))
-configFileName = 'config_file.txt'
+
+class MyApp():
+    def __init__(self):
+        self.root = Tk()
+        self.root.title( releaseTitle + " " + releaseVersion)
+        self.root.option_add('*tearOff', False)  # don't allow tear-off menus
+        self.root.bind('<KeyPress>', key_press)
+        self.root.protocol("WM_DELETE_WINDOW", exitApplication)
+        self.myVarList = [] # List of myVar objects; Variables defined/modified from the backup list file
+        self.backupFileContents = [] # Every non-comment line inside of the backup list file
+        self.skipFiles = [] # Filenames that we do not want to backup
+        self.defaultBackupFile = "" # This is the backup list file last used by the user
+        self.basePath = os.path.dirname(os.path.realpath(__file__))
+        self.configFileName = self.basePath + '\\' + 'config_file.txt'
+        self.treeViewWidget = None
+        self.balloon = None
+
+def exitApplication():
+     Gapp.root.destroy()
+     exit
 
 def main():
-    global defaultBackupFile
-    global basePath
-    global configFileName
 
-    basePath = os.path.dirname(os.path.realpath(__file__))
-    configFileName = basePath + '\\' + configFileName 
+    Pmw.initialise()
 
-    root = Tk()
-    root.title( releaseTitle + " " + releaseVersion)
-    root.option_add('*tearOff', False)  # don't allow tear-off menus
-    root.bind('<KeyPress>', key_press)
-    
+    Gapp.balloon = Pmw.Balloon(Gapp.root)
+
     # --------- Create a standard MenuBar ----------------
-    mb = createMenuBar(root)  
+    mb = createMenuBar(Gapp.root) 
+    Gapp.root.columnconfigure(0, weight=1)
+    Gapp.root.rowconfigure(0, weight=1)
+
+    # ---------- Create Tree that display all the source backup files
+    Gapp.treeViewWidget = ttk.Treeview(Gapp.root)
+    vsb = ttk.Scrollbar(Gapp.root, orient="vertical", command=Gapp.treeViewWidget.yview)
+    vsb.grid(row=0, column=1, sticky=N+S)
+    Gapp.treeViewWidget.configure(yscrollcommand=vsb.set)
+    columnNames = {'Target':40, 'Mode':12} # dictionary
+    Gapp.treeViewWidget["columns"] = ("Target", "Mode")
+    for name, colWidth in columnNames.items():
+        Gapp.treeViewWidget.column(name, width=colWidth)
+        Gapp.treeViewWidget.heading(name, text=name)
+    Gapp.treeViewWidget.heading('#0', text="Source")
+    Gapp.treeViewWidget.grid(row=0, column=0, sticky=N + E + W + S)
+
+    #Gapp.treeViewWidget.config(selectmode = 'browse') # this allows only one item to be selected at a time
 
     # ---------- Create Widgets --------------------------
+    fr2 = Frame(Gapp.root)
+    fr2.columnconfigure(0, weight=1)
+    fr2.grid(row=1, column=0, sticky=W+E)
+    createButtonBalloonWidget(fr2, "RunBackup", "Begin the backup operation", 0, 0)
 
-    #exampleLabel   = ttk.Label(root, text="Example Label").pack()
-    exampleButton1 = ttk.Button(root, text="Run Backup", command = lambda: btnCallback("runBackup") ).pack()
-  
     # ---------- you can change sytle themes if you wish ----
     #
     # NOTE: you can only change the style of widgets created with the
     #       ttk.  prefix (eg. ttk.Button and not just Button)
     #
-
     style = ttk.Style()             # get handle on the style object
     allThemes = style.theme_names()  # get list of all available themes
     currentTheme = style.theme_use() # find out what our current theme is set to
@@ -62,24 +89,57 @@ def main():
                                                                   
     # Read the tool's configuration file. In there
     # it could mention the last backup input file to read.
-    if os.path.exists(configFileName):
-        f = open(configFileName, 'r')
+    if os.path.exists(Gapp.configFileName):
+        f = open(Gapp.configFileName, 'r')
         for line in f:
             line = line.rstrip()
             parts = line.split(" ")
             if parts[0]=="lastfile":
-                defaultBackupFile=parts[1]
+                Gapp.defaultBackupFile=parts[1]
         f.close()
 
-    if defaultBackupFile:
-        if not os.path.exists(defaultBackupFile):
-            defaultBackupFile = basePath + "\\" + defaultBackupFile
-        readBackupFile(defaultBackupFile)
+    if Gapp.defaultBackupFile:
+        if not os.path.exists(Gapp.defaultBackupFile):
+            Gapp.defaultBackupFile = Gapp.basePath + "\\" + Gapp.defaultBackupFile
+        readBackupFile(Gapp.defaultBackupFile)
 
-    print("Config File: {}".format(configFileName))
-    print("Default Backup File: {}".format(defaultBackupFile)) 
+    print("Config File: {}".format(Gapp.configFileName))
+    print("Default Backup File: {}".format(Gapp.defaultBackupFile)) 
+
+    populateGuiList()
     # --------- go into main graphics loop now
-    root.mainloop()
+    Gapp.root.mainloop()
+
+def populateGuiList():
+    mode = ""
+    destination = ""
+    for line in Gapp.backupFileContents:
+        parts = line.split(" ")
+        if parts[0]=="destination":
+            destination = normalize(parts[1])
+            continue
+        if parts[0]=="mode":
+            mode = normalize(parts[1])
+            continue
+        if parts[0]=="skipFile":
+            Gapp.skipFiles.append(parts[1])
+            continue
+        if parts[0]=="set":
+            setVarValue(parts[1], normalize(parts[2]))
+            continue
+        if len(parts)==1:
+            dirparts = line.split("/")
+            dirparts[0] = normalize(dirparts[0])
+            line = '/'.join(dirparts)
+
+        item = addItemToTreeViewList(source=line, destination=destination, mode=mode)
+        Gapp.treeViewWidget.focus(item)
+
+def addItemToTreeViewList(source="source", destination="destination", mode="mode"):
+    global Gapp
+    print("source={} destination={} mode={}".format(source, destination, mode))
+    item = Gapp.treeViewWidget.insert("", 'end', text=source, values=(destination, mode))
+    return item
 
 def key_press(event):
     print( 'type:{}'.format(event.type))
@@ -95,7 +155,16 @@ def btnCallback(param):
         runTheBackup()
     if param=="open":
         openFile()
+        populateGuiList()
 
+def createButtonBalloonWidget(widget, name, balloonText, rowvalue, columnvalue):
+  b=Button(widget, text=name, command=lambda: btnCallback(name))
+  b.grid(row=rowvalue, column=columnvalue, sticky=W+E)
+  Gapp.balloon.bind(b, balloonText)
+
+# normalize will substitute $NAMES with a match in the
+# environment variables or in our local variable space.
+#
 def normalize(line):
     result = line
     expand=""
@@ -107,29 +176,33 @@ def normalize(line):
         result = expand
     return(result)
 
+# getVarValue will look in our local variable space
+# and return the value if it's found, otherwise it
+# returns None
 def getVarValue(name):
-    global myVarList
-    for v in myVarList:
+    for v in Gapp.myVarList:
         if v.name==name:
             return v.value
     return(None)
 
+# define or modify a variable in our local variable space
 def setVarValue(name,value):
-    global myVarList
     v = myVar(name,value)
-    myVarList.append(v)
+    Gapp.myVarList.append(v)
 
 def runTheBackup():
-    global commandList
     mode = ""
     destination = ""
-    for line in commandList:
+    for line in Gapp.backupFileContents:
         parts = line.split(" ")
         if parts[0]=="destination":
             destination = normalize(parts[1])
             continue
         if parts[0]=="mode":
             mode = normalize(parts[1])
+            continue
+        if parts[0]=="skipFile":
+            Gapp.skipFiles.append(parts[1])
             continue
         if parts[0]=="set":
             setVarValue(parts[1], normalize(parts[2]))
@@ -138,8 +211,34 @@ def runTheBackup():
             dirparts = line.split("/")
             dirparts[0] = normalize(dirparts[0])
             line = '/'.join(dirparts)
-        print("cp {} to {} using mode {}".format(line,destination,mode))
+
+        # If the code has reached here, then the 'line' represents
+        # the source folder that we want to backup. We will backup
+        # every file down the entire directory tree. Will will skip
+        # any file listed in the skipFiles list.
+
+        if os.path.exists(line):
+            copyFolder( line, destination, mode)
+        else:
+            print("Error: Source Directory Missing: {}".format(line))
         
+def copyFolder( folderName, targetBaseFolder, copyMode ):
+    print("cp {}\\... to {} using mode {}".format(folderName, targetBaseFolder, copyMode))
+    # this is a recursive copy operation
+    for root, dirs, files in os.walk(folderName):
+        #print("-----------------------")
+        #print("root:{}".format(root))
+        #print("dirs:{}".format(dirs))
+        #print("files:{}".format(files))
+        for f in files:
+            if f in Gapp.skipFiles:
+                pass
+                #print("SKIP {}\\{}".format(root,f))
+            else:
+                print("copy file {}\\{} => ".format(root,f))
+                srcFile = "{}\\{}".format(root, f)
+                targetFile = "{}".format(f)
+                #shutil.copyfile( srcFile, targetFile)
 
 def openFile():
     filevar = filedialog.askopenfile()
@@ -150,14 +249,13 @@ def openFile():
     writeConfigFile("lastfile", filevar.name)
 
 def writeConfigFile(name,value):
-    global configFileName
     all_of_it = []
     found = False
-    f = open(configFileName,'r')
+    f = open(Gapp.configFileName,'r')
     for line in f:
         all_of_it.append(line)
     f.close()
-    f = open(configFileName, 'w')
+    f = open(Gapp.configFileName, 'w')
     for line in all_of_it:
         parts = line.split(' ')
         if parts[0] == name:
@@ -170,7 +268,7 @@ def writeConfigFile(name,value):
 
 
 def readBackupFile(filename):
-    global commandList
+    Gapp.backupFileContents.clear()
     f = open(filename, 'r')
     for line in f:
         # chomp line to remove trailing whitespace
@@ -179,7 +277,7 @@ def readBackupFile(filename):
             continue 
         if re.match(r'^\s*$', line, re.I):
             continue
-        commandList.append(line)
+        Gapp.backupFileContents.append(line)
     f.close()
 
 def createMenuBar(root):
@@ -195,7 +293,7 @@ def createMenuBar(root):
     file.add_separator()
     file.add_command(label = 'Open...', command = lambda: btnCallback("open"))
     file.add_command(label = 'Save', command = lambda: btnCallback("save"))
-    file.add_command(label = 'Exit', command = lambda: exit())
+    file.add_command(label = 'Exit', command = lambda: exitApplication())
 
     file.entryconfig('New', accelerator = 'Ctrl + N') # does not setup event, only puts text in btn
     file.entryconfig('Open...', accelerator = 'Ctrl + O')
@@ -204,7 +302,6 @@ def createMenuBar(root):
     return(menubar)
 
 if __name__ == "__main__":
+    Gapp = MyApp()
     main()
-
-
 
