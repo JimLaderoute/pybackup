@@ -1,0 +1,22 @@
+# Folders to get backed up
+# My DELL Windows10 2021 computer's USERPROFILE env variable points to C:\Users\wheez
+#
+set FROM1 $USERPROFILE
+set FROM2 D:/JamesLaderoute
+set TO1 F:/backups/photos-hp
+set TO2 F:/backups/scotty/
+
+# Files we don't care to backup
+skipFile thumbs.db
+skipFile desktop.ini
+
+# Set the destination and mode of the following folders that
+# we want to copy over.
+
+destination $TO1
+mode relative
+
+# Batch 1
+
+$FROM1/Pictures
+
