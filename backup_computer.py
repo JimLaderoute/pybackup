@@ -6,8 +6,9 @@
 # The default area is in a config file.
 #
 
-from tkinter import *
 from tkinter import ttk
+from tkinter import *
+from tkinter.ttk import *
 from tkinter import filedialog
 import os
 import Pmw
@@ -35,7 +36,7 @@ class MyApp():
         self.skipFiles = [] # Filenames that we do not want to backup
         self.defaultBackupFile = "" # This is the backup list file last used by the user
         self.basePath = os.path.dirname(os.path.realpath(__file__))
-        self.configFileName = self.basePath + '\\' + 'config_file.txt'
+        self.configFileName = os.path.join(self.basePath , 'config_file.txt')
         self.treeViewWidget = None
         self.balloon = None
 
@@ -66,26 +67,36 @@ def main():
         Gapp.treeViewWidget.heading(name, text=name)
     Gapp.treeViewWidget.heading('#0', text="Source")
     Gapp.treeViewWidget.grid(row=0, column=0, sticky=N + E + W + S)
-
+    # Setup a couple of tags so that we can use a striped style for the rows
+    # listed in the tree listing.
+    Gapp.treeViewWidget.tag_configure('oddrow', background="white")
+    Gapp.treeViewWidget.tag_configure('evenrow', background="lightblue")
     #Gapp.treeViewWidget.config(selectmode = 'browse') # this allows only one item to be selected at a time
 
     # ---------- Create Widgets --------------------------
     fr2 = Frame(Gapp.root)
     fr2.columnconfigure(0, weight=1)
     fr2.grid(row=1, column=0, sticky=W+E)
-    createButtonBalloonWidget(fr2, "RunBackup", "Begin the backup operation", 0, 0)
+    createButtonBalloonWidget(fr2, "RunBackup", "runBackup", "Begin the backup operation", 0, 0)
 
     # ---------- you can change sytle themes if you wish ----
     #
     # NOTE: you can only change the style of widgets created with the
     #       ttk.  prefix (eg. ttk.Button and not just Button)
     #
-    style = ttk.Style()             # get handle on the style object
+    style = ttk.Style(Gapp.root)             # get handle on the style object
     allThemes = style.theme_names()  # get list of all available themes
     currentTheme = style.theme_use() # find out what our current theme is set to
-    style.theme_use('vista')         # to change the theme
+    style.theme_use('default')         # to change the theme (eg. "clam", "alt", "default", "classic")
     # exampleButton2.winfo_class()   # to find out class name eg. TButton; only seems to work interactively ; need focus?? 
     style.configure( 'TButton', foreground = 'blue' )  # to modify a themed widget
+    style.configure( 'Treeview', background="#D3D3D3",
+        foreground="black",
+        rowheight=25,
+        fieldbackground="#D3D3D3"
+        )
+    style.map('Treeview',
+        background=[('selected', 'blue')])
                                                                   
     # Read the tool's configuration file. In there
     # it could mention the last backup input file to read.
@@ -97,10 +108,12 @@ def main():
             if parts[0]=="lastfile":
                 Gapp.defaultBackupFile=parts[1]
         f.close()
+    else:
+        print("No config file located {}".format(Gapp.configFileName))
 
     if Gapp.defaultBackupFile:
         if not os.path.exists(Gapp.defaultBackupFile):
-            Gapp.defaultBackupFile = Gapp.basePath + "\\" + Gapp.defaultBackupFile
+            Gapp.defaultBackupFile = os.path.join(Gapp.basePath , Gapp.defaultBackupFile)
         readBackupFile(Gapp.defaultBackupFile)
 
     print("Config File: {}".format(Gapp.configFileName))
@@ -111,6 +124,12 @@ def main():
     Gapp.root.mainloop()
 
 def populateGuiList():
+    # First thing we need to do is clear the current list contents.
+    # We don't want to append to the list, we want to replace the list.
+    for i in Gapp.treeViewWidget.get_children():
+        Gapp.treeViewWidget.delete(i)
+
+    isOdd=True
     mode = ""
     destination = ""
     for line in Gapp.backupFileContents:
@@ -132,13 +151,17 @@ def populateGuiList():
             dirparts[0] = normalize(dirparts[0])
             line = '/'.join(dirparts)
 
-        item = addItemToTreeViewList(source=line, destination=destination, mode=mode)
+        item = addItemToTreeViewList(source=line, destination=destination, mode=mode, flag=isOdd)
+        isOdd = not isOdd
         Gapp.treeViewWidget.focus(item)
 
-def addItemToTreeViewList(source="source", destination="destination", mode="mode"):
+def addItemToTreeViewList(source="source", destination="destination", mode="mode", flag=True):
     global Gapp
     print("source={} destination={} mode={}".format(source, destination, mode))
-    item = Gapp.treeViewWidget.insert("", 'end', text=source, values=(destination, mode))
+    if flag==False:
+        item = Gapp.treeViewWidget.insert("", 'end', text=source, values=(destination, mode), tags=('oddrow',))
+    else:
+        item = Gapp.treeViewWidget.insert("", 'end', text=source, values=(destination, mode), tags=('evenrow',))
     return item
 
 def key_press(event):
@@ -153,12 +176,12 @@ def btnCallback(param):
     print("Clicked Me ",param)
     if param=="runBackup":
         runTheBackup()
-    if param=="open":
-        openFile()
-        populateGuiList()
+    if param=="openBackupFile":
+        if openBackupFile():
+            populateGuiList()
 
-def createButtonBalloonWidget(widget, name, balloonText, rowvalue, columnvalue):
-  b=Button(widget, text=name, command=lambda: btnCallback(name))
+def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, columnvalue):
+  b=Button(widget, text=name, command=lambda: btnCallback(actionName))
   b.grid(row=rowvalue, column=columnvalue, sticky=W+E)
   Gapp.balloon.bind(b, balloonText)
 
@@ -223,7 +246,7 @@ def runTheBackup():
             print("Error: Source Directory Missing: {}".format(line))
         
 def copyFolder( folderName, targetBaseFolder, copyMode ):
-    print("cp {}\\... to {} using mode {}".format(folderName, targetBaseFolder, copyMode))
+    print("cp {}... to {} using mode {}".format(folderName, targetBaseFolder, copyMode))
     # this is a recursive copy operation
     for root, dirs, files in os.walk(folderName):
         #print("-----------------------")
@@ -233,28 +256,32 @@ def copyFolder( folderName, targetBaseFolder, copyMode ):
         for f in files:
             if f in Gapp.skipFiles:
                 pass
-                #print("SKIP {}\\{}".format(root,f))
+                #print("SKIP {} {}".format(root,f))
             else:
-                print("copy file {}\\{} => ".format(root,f))
-                srcFile = "{}\\{}".format(root, f)
+                print("copy file {} {} => ".format(root,f))
+                srcFile = os.path.join(root, f)
                 targetFile = "{}".format(f)
                 #shutil.copyfile( srcFile, targetFile)
 
-def openFile():
-    filevar = filedialog.askopenfile()
+def openBackupFile():
+    filevar = filedialog.askopenfile(title="Folders to be backed up",
+        filetypes=[('Backup Files', ['blist'])])
     if filevar == None:
-        return
+        return False
+    print("filevar is {}".format(filevar))
     readBackupFile(filevar.name)
     # update the last backup filename now
     writeConfigFile("lastfile", filevar.name)
+    return True
 
 def writeConfigFile(name,value):
     all_of_it = []
     found = False
-    f = open(Gapp.configFileName,'r')
-    for line in f:
-        all_of_it.append(line)
-    f.close()
+    if os.path.exists(Gapp.configFileName):
+        f = open(Gapp.configFileName,'r')
+        for line in f:
+            all_of_it.append(line)
+        f.close()
     f = open(Gapp.configFileName, 'w')
     for line in all_of_it:
         parts = line.split(' ')
@@ -266,8 +293,12 @@ def writeConfigFile(name,value):
         f.write("{} {}".format(name,value))
     f.close()
 
-
+# The backup text file contains all the folders on your computer that you wish
+# to be backed up to your destination folder.
 def readBackupFile(filename):
+    if not os.path.exists(filename):
+        return
+
     Gapp.backupFileContents.clear()
     f = open(filename, 'r')
     for line in f:
@@ -280,25 +311,27 @@ def readBackupFile(filename):
         Gapp.backupFileContents.append(line)
     f.close()
 
+# Create the main menubar for the application. This holds all of the category
+# menus for the application and subsequent buttons that will preform the actions.
 def createMenuBar(root):
     menubar = Menu(root)
     root.config(menu = menubar)
-    file = Menu(menubar)
-    edit = Menu(menubar)
-    help_ = Menu(menubar)
-    menubar.add_cascade( menu = file, label = "File")
-    menubar.add_cascade( menu = edit, label = "Edit")
-    menubar.add_cascade( menu = help_, label = "Help")
-    file.add_command(label = 'New', command = lambda: print('TODO: New File'))
-    file.add_separator()
-    file.add_command(label = 'Open...', command = lambda: btnCallback("open"))
-    file.add_command(label = 'Save', command = lambda: btnCallback("save"))
-    file.add_command(label = 'Exit', command = lambda: exitApplication())
+    mfile = Menu(menubar)
+    medit = Menu(menubar)
+    mhelp_ = Menu(menubar)
+    menubar.add_cascade( menu = mfile, label = "File")
+    menubar.add_cascade( menu = medit, label = "Edit")
+    menubar.add_cascade( menu = mhelp_, label = "Help")
+    mfile.add_command(label = 'New', command = lambda: print('TODO: New File'))
+    mfile.add_separator()
+    mfile.add_command(label = 'Open...', command = lambda: btnCallback("openBackupFile"))
+    mfile.add_command(label = 'Save', command = lambda: btnCallback("save"))
+    mfile.add_command(label = 'Exit', command = lambda: exitApplication())
 
-    file.entryconfig('New', accelerator = 'Ctrl + N') # does not setup event, only puts text in btn
-    file.entryconfig('Open...', accelerator = 'Ctrl + O')
-    file.entryconfig('Save', accelerator = 'Ctrl + S')
-    file.entryconfig('Exit', accelerator = 'Ctrl + Z')
+    mfile.entryconfig('New', accelerator = 'Ctrl + N') # does not setup event, only puts text in btn
+    mfile.entryconfig('Open...', accelerator = 'Ctrl + O')
+    mfile.entryconfig('Save', accelerator = 'Ctrl + S')
+    mfile.entryconfig('Exit', accelerator = 'Ctrl + Z')
     return(menubar)
 
 if __name__ == "__main__":
