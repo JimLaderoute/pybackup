@@ -1,10 +1,10 @@
 # Folders to get backed up
 # My DELL Windows10 2021 computer's USERPROFILE env variable points to C:\Users\wheez
 #
-set FROM1 $USERPROFILE
-set FROM2 D:/JamesLaderoute
-set TO1 F:/backups/photos-hp
-set TO2 F:/backups/scotty/
+set CDRIVE $USERPROFILE
+set DDRIVE D:\JamesLaderoute
+set TO1 F:\backups\photos-hp
+set TO2 F:\backups\scotty\C__\Users\Kirk
 
 # Files we don't care to backup
 skipFile thumbs.db
@@ -18,27 +18,34 @@ mode relative
 
 # Batch 1
 
-$FROM1/AppData/Local/Microsoft
-$FROM1/Pictures
-$FROM1/Documents
-$FROM1/Videos
-$FROM1/Desktop
-$FROM1/Music
-$FROM1/NoSuchFolderTest
+$CDRIVE\AppData\Local\Microsoft
+$CDRIVE\Pictures
+$CDRIVE\Documents
+$CDRIVE\Videos
+$CDRIVE\Desktop
+$CDRIVE\Music
+$CDRIVE\NoSuchFolderTest
 
 # Set the destination of the second batch of folders that we want to backup
 
-destination $TO2
 mode substitute
 
 # Batch 2
 
-$FROM2/Documents
-$FROM2/HP_Install_Kits
-#$FROM2/Installations
-$FROM2/Music
-$FROM2/MyHardware
-$FROM2/MySoftware
-$FROM2/Pictures
+destination $TO2\Documents
+$DDRIVE\Documents
 
+destination $TO2\HP_Install_Kits
+$DDRIVE\HP_Install_Kits
 
+destination $TO2\Music
+$DDRIVE\Music
+
+destination $TO2\MyHardware
+$DDRIVE\MyHardware
+
+destination $TO2\MySoftware
+$DDRIVE\MySoftware
+
+destination $TO2\Pictures
+$DDRIVE\Pictures

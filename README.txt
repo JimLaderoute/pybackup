@@ -1,3 +1,23 @@
+Purpose:
+	To backup files from one area to another area.
+
+ToDo:
+- When doing long backups, the GUI is inactive and you see (Not Responding) in the title bar. Fix this.
+  Maybe run the backup in a thread; and have some WAIT dialog box that locks the application while   
+  it's running?
+- Allow Adding and Removing rows from the list
+- Add a TestBackup button that will figure out how many files would have 
+  gotten copied but doesn't really copy them
+- Add a Text window area for messages, instead of writting to the console with print()
+- When copy fails, save this info to tell the user the summary of failures when it's done.
+- Keep a summary of new things copied during the run, to show to the user.
+- Handle SymLinks; are we copying symlinks and how? Are they pointing to the old DISK or new DISK? Did
+  it copy the symlink or did it try and copy the file that the symlink points to?
+- Maintain a list of the TARGET's MD5 value for faster compares of subsequent backups.
+- Popup up a dialog box when the backup is done (or signify it in some way in the GUI)
+
+
+
 This requires packages.
 	Pmw
 	tkinter

@@ -14,6 +14,7 @@ import os
 import Pmw
 import re # to use regular expressions
 import shutil
+import hashlib
 
 releaseTitle = "BackupComputer"
 releaseVersion = "1.0"
@@ -39,6 +40,7 @@ class MyApp():
         self.configFileName = os.path.join(self.basePath , 'config_file.txt')
         self.treeViewWidget = None
         self.balloon = None
+        self.root.geometry("1200x400")
 
 def exitApplication():
      Gapp.root.destroy()
@@ -136,6 +138,7 @@ def populateGuiList():
         parts = line.split(" ")
         if parts[0]=="destination":
             destination = normalize(parts[1])
+            #print(f"parts[1] is {parts[1]} and destination is {destination}")
             continue
         if parts[0]=="mode":
             mode = normalize(parts[1])
@@ -173,12 +176,16 @@ def key_press(event):
 # This is a callback function for a PushButton object
 #
 def btnCallback(param):
-    print("Clicked Me ",param)
     if param=="runBackup":
         runTheBackup()
+        return
+
     if param=="openBackupFile":
         if openBackupFile():
             populateGuiList()
+        return
+    print("Clicked Me ",param)
+    return
 
 def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, columnvalue):
   b=Button(widget, text=name, command=lambda: btnCallback(actionName))
@@ -189,15 +196,24 @@ def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, c
 # environment variables or in our local variable space.
 #
 def normalize(line):
-    result = line
-    expand=""
-    if re.match( r'\$.*', line, re.I):
-        expand = os.getenv(line[1:])
-        if expand==None:
-            expand = getVarValue(line[1:])
-    if expand:
-        result = expand
-    return(result)
+    joined = ""
+    count=0
+    for linePart in line.split('\\'):
+        count += 1
+        expand=""
+        if re.match( r'\$.*', linePart, re.I):
+            expand = os.getenv(linePart[1:])
+            #print(f"normalize: linePart[1:] is {linePart[1:]} and expand getenv is {expand}")
+            if expand==None:
+                expand = getVarValue(linePart[1:])
+                #print(f"normalize: linePart[1:] is {linePart[1:]} and expand getVarValue is {expand}")
+        if expand:
+            linePart = expand
+        joined = os.path.join(joined,linePart)
+    if count>1 and -1==joined.find(':\\'):
+        joined = joined.replace(":", ":\\")
+
+    return(joined)
 
 # getVarValue will look in our local variable space
 # and return the value if it's found, otherwise it
@@ -241,30 +257,110 @@ def runTheBackup():
         # any file listed in the skipFiles list.
 
         if os.path.exists(line):
-            copyFolder( line, destination, mode)
+            copyCount = copyFolder( line, destination, mode)
+            print("Copied {} files.".format(copyCount))
         else:
             print("Error: Source Directory Missing: {}".format(line))
-        
-def copyFolder( folderName, targetBaseFolder, copyMode ):
-    print("cp {}... to {} using mode {}".format(folderName, targetBaseFolder, copyMode))
+
+# copyFolder - function that will copy a folder (and all it's files and 
+#               sub-folders and files) to a target base-folder.
+#
+# Arguments:
+#  
+# srcFolderPath: Name of the source folder to be copied. These are the
+#   files that you want to backup.
+#
+# targetBaseFolder:
+#   This is the base folder of the target disk to copy the files to.
+#
+# copyMode:
+#   There are two different copy modes that can be choosen. 
+#
+#   'relative'   :  Takes srcPath and appends that to destination path (minus the Drive letter of course)
+#   'substitute' :  Takes the paths under the specified sourceRoot that it finds and appends that path
+#                   minus the original sourceRoot to the destination root path.
+#  
+def copyFolder( srcFolderPath, targetBaseFolder, copyMode ):
+    copiedCount = 0
+    srcFolderPath = srcFolderPath.replace("//", '\\')
+    print("copyFolder( srcFolderPath={} targetBaseFolder={} copyMode={}".format(srcFolderPath, targetBaseFolder, copyMode))
     # this is a recursive copy operation
-    for root, dirs, files in os.walk(folderName):
-        #print("-----------------------")
-        #print("root:{}".format(root))
-        #print("dirs:{}".format(dirs))
-        #print("files:{}".format(files))
+    for srcRoot, dirs, files in os.walk(srcFolderPath):
         for f in files:
             if f in Gapp.skipFiles:
-                pass
-                #print("SKIP {} {}".format(root,f))
+                continue
             else:
-                print("copy file {} {} => ".format(root,f))
-                srcFile = os.path.join(root, f)
-                targetFile = "{}".format(f)
-                #shutil.copyfile( srcFile, targetFile)
+                srcFile = os.path.join(srcRoot, f)
+                if copyMode=="relative":
+                    srcRootPath = srcRoot.replace(":","__")
+                    targetFile = os.path.join(targetBaseFolder, srcRootPath, f)
+                elif copyMode=="substitute":
+                    # srcFolderPath     => D:\JamesLaderoute\Pictures\2021\2021-03-13-doves
+                    # targetBaseFolder  => F:\backups\scotty\C__\Users\Kirk\Pictures\2021\2021-03-13-doves
+                    #
+                    # srcRoot           => D:\JamesLaderoute\Pictures\2021\2021-03-13-doves 
+                    # f                 => IMG_1297.CR2
+                    # goal              => F:\backups\scotty\C__\Users\Kirk\Pictures\2021\2021-03-13-doves\IMG_1297.CR2
+                    #
+                    # srcRoot           => D:\JamesLaderoute\Pictures\2021\2021-03-13-doves\jpg
+                    # f                 => 20210313-IMG-1298.jpg
+                    # goal              => F:\backups\scotty\C__\Users\Kirk\Pictures\2021\2021-03-13-doves\jpg\20210313-IMG-1298.jpg
+                    #
+                    
+                    srcRoot_Minus_srcFolderPath_Eq_DestFilePath = srcRoot.replace(srcFolderPath,'')  # \jpg
+                    # NOTE: for join to work as we want we have to ensure our first char in the path is not the slash
+                    if srcRoot_Minus_srcFolderPath_Eq_DestFilePath and srcRoot_Minus_srcFolderPath_Eq_DestFilePath[0] in ['/', '\\']:
+                        srcRoot_Minus_srcFolderPath_Eq_DestFilePath = srcRoot_Minus_srcFolderPath_Eq_DestFilePath.replace('/', '', 1)
+                        srcRoot_Minus_srcFolderPath_Eq_DestFilePath = srcRoot_Minus_srcFolderPath_Eq_DestFilePath.replace('\\', '', 1)
+                    targetDestFolderPath = os.path.join(targetBaseFolder, srcRoot_Minus_srcFolderPath_Eq_DestFilePath) # F:\backups\scotty\C__\Users\Kirk\Pictures\2021\2021-03-13-doves\jpg
+                    targetFile = os.path.join(targetDestFolderPath, f)
+                else:
+                    print("Error: wrong copyMode specified {}".format(copyMode))
+                    continue
+
+                if True==filesAreDifferent(srcFile, targetFile):
+                    if myCopyFile(srcFile, targetFile):
+                        copiedCount += 1
+    return copiedCount
+
+def myCopyFile(srcFile, targetFile):
+    try:
+        os.makedirs(os.path.dirname(targetFile), exist_ok=True)
+        shutil.copyfile( srcFile, targetFile)
+    except OSError as err:
+        print(f"Failed to copy {srcFile} to {targetFile} error is {err}.")
+        return False
+    return True
+
+
+def checksum(filename, hash_factory=hashlib.md5, chunk_num_blocks=128):
+    h = hash_factory()
+    with open(filename,'rb') as f: 
+        while chunk := f.read(chunk_num_blocks*h.block_size): 
+            h.update(chunk)
+    return h.digest()
+
+def fileHashAreDifferent(srcFile, targetFile):
+    srcHash = checksum(srcFile)
+    targetHash = checksum(targetFile)
+    return not (srcHash == targetHash)
+
+def fileSizesAreDifferent(srcFile, targetFile):
+    srcSize = os.stat(srcFile).st_size
+    targetSize = os.stat(targetFile).st_size 
+    return not (srcSize == targetSize)
+
+def filesAreDifferent(srcFile, targetFile):
+    if not os.path.exists(targetFile):
+        return True # no target file so we need to copy the src to dest
+    if fileSizesAreDifferent(srcFile, targetFile):
+        return True # if the file sizes differ, then means something is different
+    if fileHashAreDifferent(srcFile, targetFile):
+        return True # something different in the file contents, so copy src to dest
+    return False
 
 def openBackupFile():
-    filevar = filedialog.askopenfile(title="Folders to be backed up",
+    filevar = filedialog.askopenfile(title="Pick a Backup Listing File",
         filetypes=[('Backup Files', ['blist'])])
     if filevar == None:
         return False
