@@ -1,51 +1,25 @@
 # Folders to get backed up
 # My DELL Windows10 2021 computer's USERPROFILE env variable points to C:\Users\wheez
 #
-set CDRIVE $USERPROFILE
-set DDRIVE D:\JamesLaderoute
-set TO1 F:\backups\photos-hp
-set TO2 F:\backups\scotty\C__\Users\Kirk
+set DATA_DRIVE D:\JamesLaderoute
+set TARGET_RELATIVE_PATH F:\backups\photos-hp
+set TARGET_SUBSTITUTE_ROOT F:\backups\scotty\C__\Users\Kirk
 
 # Files we don't care to backup
 skipFile thumbs.db
 skipFile desktop.ini
 
-# Set the destination and mode of the following folders that
-# we want to copy over.
+backup $USERPROFILE\AppData\Local\Microsoft 	$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\Pictures 			$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\Documents 			$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\Videos 			$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\Desktop 			$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\Music 			$TARGET_RELATIVE_PATH relative
+backup $USERPROFILE\NoSuchFolderTest 		$TARGET_RELATIVE_PATH relative
+backup $DATA_DRIVE\Documents 			$TARGET_SUBSTITUTE_ROOT\Documents substitute
+backup $DATA_DRIVE\HP_Install_Kits 		$TARGET_SUBSTITUTE_ROOT\HP_Install_Kits substitute
+backup $DATA_DRIVE\Music 			$TARGET_SUBSTITUTE_ROOT\Music substitute
+backup $DATA_DRIVE\MyHardware 			$TARGET_SUBSTITUTE_ROOT\MyHardware substitute
+backup $DATA_DRIVE\MySoftware 			$TARGET_SUBSTITUTE_ROOT\MySoftware substitute
+backup $DATA_DRIVE\Pictures 			$TARGET_SUBSTITUTE_ROOT\Pictures substitute
 
-destination $TO1
-mode relative
-
-# Batch 1
-
-$CDRIVE\AppData\Local\Microsoft
-$CDRIVE\Pictures
-$CDRIVE\Documents
-$CDRIVE\Videos
-$CDRIVE\Desktop
-$CDRIVE\Music
-$CDRIVE\NoSuchFolderTest
-
-# Set the destination of the second batch of folders that we want to backup
-
-mode substitute
-
-# Batch 2
-
-destination $TO2\Documents
-$DDRIVE\Documents
-
-destination $TO2\HP_Install_Kits
-$DDRIVE\HP_Install_Kits
-
-destination $TO2\Music
-$DDRIVE\Music
-
-destination $TO2\MyHardware
-$DDRIVE\MyHardware
-
-destination $TO2\MySoftware
-$DDRIVE\MySoftware
-
-destination $TO2\Pictures
-$DDRIVE\Pictures

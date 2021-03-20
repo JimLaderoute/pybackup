@@ -1,0 +1,9 @@
+# Files we don't care to backup
+skipFile thumbs.db
+skipFile Thumbs.db
+skipFile desktop.ini
+
+backup D:\JamesLaderoute\TestBackupLargeFiles F:\backups\TestBackupLargeFiles relative
+
+
+

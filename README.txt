@@ -6,8 +6,6 @@ ToDo:
   Maybe run the backup in a thread; and have some WAIT dialog box that locks the application while   
   it's running?
 - Allow Adding and Removing rows from the list
-- Add a TestBackup button that will figure out how many files would have 
-  gotten copied but doesn't really copy them
 - Add a Text window area for messages, instead of writting to the console with print()
 - When copy fails, save this info to tell the user the summary of failures when it's done.
 - Keep a summary of new things copied during the run, to show to the user.

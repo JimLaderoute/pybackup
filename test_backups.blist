@@ -1,6 +1,7 @@
 # Folders to get backed up
 # My DELL Windows10 2021 computer's USERPROFILE env variable points to C:\Users\wheez
 #
+
 set CDRIVE $USERPROFILE
 set DDRIVE D:\JamesLaderoute
 set TO1 F:\backups\photos-hp
@@ -11,20 +12,8 @@ skipFile thumbs.db
 skipFile Thumbs.db
 skipFile desktop.ini
 
-# Set the destination and mode of the following folders that
-# we want to copy over.
-
-# Batch 1
-#------------------------------
-destination $TO1
-mode relative
-#$CDRIVE\Pictures
-
-# Batch 2
-#------------------------------
-mode substitute
-destination $TO2\Pictures
-$DDRIVE\Pictures
+backup $CDRIVE\Pictures $TO1 relative
+backup $DDRIVE\Pictures $TO2\Pictures substitute
 
 
 

@@ -15,9 +15,14 @@ import Pmw
 import re # to use regular expressions
 import shutil
 import hashlib
+import time # so we can time how long it takes to process things
+import filecmp
 
 releaseTitle = "BackupComputer"
 releaseVersion = "1.0"
+LongestTime = 0
+LongestFile = ""
+
 
 class myVar():
     def __init__(self, uname, uvalue):
@@ -79,7 +84,8 @@ def main():
     fr2 = Frame(Gapp.root)
     fr2.columnconfigure(0, weight=1)
     fr2.grid(row=1, column=0, sticky=W+E)
-    createButtonBalloonWidget(fr2, "RunBackup", "runBackup", "Begin the backup operation", 0, 0)
+    createButtonBalloonWidget(fr2, "RunBackup", "runBackup", "Begin the backup operation",     rowvalue=0, columnvalue=0)
+    createButtonBalloonWidget(fr2, "TestBackup", "testBackup", "Do not really do the backups", rowvalue=0, columnvalue=1)
 
     # ---------- you can change sytle themes if you wish ----
     #
@@ -135,28 +141,20 @@ def populateGuiList():
     mode = ""
     destination = ""
     for line in Gapp.backupFileContents:
-        parts = line.split(" ")
-        if parts[0]=="destination":
-            destination = normalize(parts[1])
-            #print(f"parts[1] is {parts[1]} and destination is {destination}")
-            continue
-        if parts[0]=="mode":
-            mode = normalize(parts[1])
-            continue
+        parts = line.replace('\t', ' ').split()
         if parts[0]=="skipFile":
             Gapp.skipFiles.append(parts[1])
             continue
         if parts[0]=="set":
             setVarValue(parts[1], normalize(parts[2]))
             continue
-        if len(parts)==1:
-            dirparts = line.split("/")
-            dirparts[0] = normalize(dirparts[0])
-            line = '/'.join(dirparts)
-
-        item = addItemToTreeViewList(source=line, destination=destination, mode=mode, flag=isOdd)
-        isOdd = not isOdd
-        Gapp.treeViewWidget.focus(item)
+        if parts[0]=="backup":
+            source = normalize(parts[1])
+            target = normalize(parts[2])
+            mode = parts[3]
+            item = addItemToTreeViewList(source=source, destination=target, mode=mode, flag=isOdd)
+            isOdd = not isOdd
+            Gapp.treeViewWidget.focus(item)
 
 def addItemToTreeViewList(source="source", destination="destination", mode="mode", flag=True):
     global Gapp
@@ -176,20 +174,29 @@ def key_press(event):
 # This is a callback function for a PushButton object
 #
 def btnCallback(param):
-    if param=="runBackup":
-        runTheBackup()
-        return
+    global LongestFile, LongestTime
 
-    if param=="openBackupFile":
+    nCopied = 0
+    if param=="runBackup":
+        LongestTime = 0
+        LongestFile = ""
+        nCopied = runTheBackup(skipbackup=False)
+        print(f"Backup Done. Backed up {nCopied} files.")
+    elif param=="testBackup":
+        LongestTime = 0
+        LongestFile = ""
+        nCopied = runTheBackup(skipbackup=True)
+        print(f"Test Backup Done. This would have backed up {nCopied} files.")
+    elif param=="openBackupFile":
         if openBackupFile():
             populateGuiList()
-        return
-    print("Clicked Me ",param)
+    else:
+        print(f"bntCallback: was passed param={param}")
     return
 
 def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, columnvalue):
   b=Button(widget, text=name, command=lambda: btnCallback(actionName))
-  b.grid(row=rowvalue, column=columnvalue, sticky=W+E)
+  b.grid(row=rowvalue, column=columnvalue) #, sticky=W)
   Gapp.balloon.bind(b, balloonText)
 
 # normalize will substitute $NAMES with a match in the
@@ -229,38 +236,26 @@ def setVarValue(name,value):
     v = myVar(name,value)
     Gapp.myVarList.append(v)
 
-def runTheBackup():
+def runTheBackup(skipbackup):
     mode = ""
-    destination = ""
+    totalCopies=0
     for line in Gapp.backupFileContents:
-        parts = line.split(" ")
-        if parts[0]=="destination":
-            destination = normalize(parts[1])
+        parts = line.replace('\t',' ').split()
+        if parts[0] in [ "skipfile", "set"]:
             continue
-        if parts[0]=="mode":
-            mode = normalize(parts[1])
-            continue
-        if parts[0]=="skipFile":
-            Gapp.skipFiles.append(parts[1])
-            continue
-        if parts[0]=="set":
-            setVarValue(parts[1], normalize(parts[2]))
-            continue
-        if len(parts)==1:
-            dirparts = line.split("/")
-            dirparts[0] = normalize(dirparts[0])
-            line = '/'.join(dirparts)
-
-        # If the code has reached here, then the 'line' represents
-        # the source folder that we want to backup. We will backup
-        # every file down the entire directory tree. Will will skip
-        # any file listed in the skipFiles list.
-
-        if os.path.exists(line):
-            copyCount = copyFolder( line, destination, mode)
-            print("Copied {} files.".format(copyCount))
-        else:
-            print("Error: Source Directory Missing: {}".format(line))
+        if parts[0]=="backup":
+            sourceFolder = normalize(parts[1])
+            targetFolder = normalize(parts[2])
+            mode = parts[3]
+            if skipbackup:
+                print(f"Testing backup of {sourceFolder} to {targetFolder}")
+            if os.path.exists(sourceFolder):
+                copyCount = copyFolder( sourceFolder, targetFolder, mode, skipbackup)
+                totalCopies += copyCount
+                print("Copied {} files.".format(copyCount))
+            else:
+                print("Error: Source Directory Missing: {}".format(sourceFolder))
+    return totalCopies
 
 # copyFolder - function that will copy a folder (and all it's files and 
 #               sub-folders and files) to a target base-folder.
@@ -280,7 +275,7 @@ def runTheBackup():
 #   'substitute' :  Takes the paths under the specified sourceRoot that it finds and appends that path
 #                   minus the original sourceRoot to the destination root path.
 #  
-def copyFolder( srcFolderPath, targetBaseFolder, copyMode ):
+def copyFolder( srcFolderPath, targetBaseFolder, copyMode, skipbackup ):
     copiedCount = 0
     srcFolderPath = srcFolderPath.replace("//", '\\')
     print("copyFolder( srcFolderPath={} targetBaseFolder={} copyMode={}".format(srcFolderPath, targetBaseFolder, copyMode))
@@ -318,9 +313,15 @@ def copyFolder( srcFolderPath, targetBaseFolder, copyMode ):
                     print("Error: wrong copyMode specified {}".format(copyMode))
                     continue
 
+                if skipbackup:
+                    print(f"\tTesting backup for {srcFile} to {targetFile}")
+
                 if True==filesAreDifferent(srcFile, targetFile):
-                    if myCopyFile(srcFile, targetFile):
+                    if skipbackup:
                         copiedCount += 1
+                    else:
+                        if myCopyFile(srcFile, targetFile):
+                            copiedCount += 1
     return copiedCount
 
 def myCopyFile(srcFile, targetFile):
@@ -341,9 +342,30 @@ def checksum(filename, hash_factory=hashlib.md5, chunk_num_blocks=128):
     return h.digest()
 
 def fileHashAreDifferent(srcFile, targetFile):
-    srcHash = checksum(srcFile)
-    targetHash = checksum(targetFile)
-    return not (srcHash == targetHash)
+    global LongestTime, LongestFile
+
+    byHash = False 
+    if byHash:
+        timestart = time.time()
+        srcHash = checksum(srcFile)
+        targetHash = checksum(targetFile)
+        timeend = time.time()
+        deltaTime = timeend - timestart
+        if deltaTime > LongestTime:
+            LongestTime = deltaTime
+            LongestFile = srcFile
+        print(f"\t\tHash Compare took {deltaTime} seconds.  Longest {LongestTime} for file {LongestFile}")
+        return not (srcHash == targetHash)
+    else:
+        timestart = time.time()
+        isSame = filecmp.cmp(srcFile, targetFile)
+        timeend = time.time()
+        deltaTime = timeend - timestart
+        if deltaTime > LongestTime:
+            LongestTime = deltaTime
+            LongestFile = srcFile
+        print(f"\t\tfilecmp.cmp took {deltaTime} seconds.  Longest {LongestTime} for file {LongestFile}")
+        return not isSame
 
 def fileSizesAreDifferent(srcFile, targetFile):
     srcSize = os.stat(srcFile).st_size
