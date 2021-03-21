@@ -35,10 +35,12 @@ from tkinter import (DISABLED, NORMAL)
 from tkinter.ttk import *
 from tkinter import filedialog
 from tkinter import messagebox
+from tkinter import scrolledtext
 from multiprocessing import Process, Manager, Queue
 from queue import Empty
 
 import os
+import sys
 import Pmw
 import re # to use regular expressions
 import shutil
@@ -52,6 +54,14 @@ DELAY1 = 80
 
 # Queue must be global
 q = Queue()
+
+class RedirectText(object):
+    def __init__(self, text_ctrl):
+        self.output = text_ctrl
+    def write(self, string):
+        Gapp.textWidget.configure(state=NORMAL)
+        self.output.insert(END, string)
+        Gapp.textWidget.configure(state=DISABLED)
 
 class myVar():
     def __init__(self, uname, uvalue):
@@ -82,8 +92,9 @@ def exitApplication():
     if Gapp.p1 and Gapp.p1.is_alive():
         messagebox.showwarning(title="Backround process is still running", message="Please wait for backround process to complete")
     else:
+        sys.stdout = Gapp.oldstdout
         Gapp.root.destroy()
-        exit()
+        exit("User Exited Application")
 
 def onGetValue():
     if Gapp.p1.is_alive():
@@ -91,10 +102,10 @@ def onGetValue():
         return
     else:
         try:
-            Gapp.widgets["RunBackup"].config(state=NORMAL)
+            Gapp.widgets["Run Backup"].config(state=NORMAL)
             Gapp.widgets["TestBackup"].config(state=NORMAL)
             Gapp.widgets["StopBackup"].config(state=DISABLED)
-            print( q.get(0))
+            print( "Backup Finished. Backed up {} files.".format(q.get(0)))
         except Empty:
             print("queue is empty")
 
@@ -127,15 +138,31 @@ def main():
     Gapp.treeViewWidget.tag_configure('evenrow', background="lightblue")
     #Gapp.treeViewWidget.config(selectmode = 'browse') # this allows only one item to be selected at a time
 
-    # ---------- Create Widgets --------------------------
-    fr2 = Frame(Gapp.root)
-    fr2.columnconfigure(0, weight=1)
-    fr2.columnconfigure(1, weight=1)
-    fr2.columnconfigure(2, weight=1)
+    # ---------- Create a ScrolledText Log Window to display text
+    fr2 = Frame(Gapp.root, height=22)
+    Gapp.root.rowconfigure(1, weight=0)
     fr2.grid(row=1, column=0, sticky=W+E)
-    createButtonBalloonWidget(fr2, "RunBackup", "runBackup", "Begin the backup operation",     rowvalue=0, columnvalue=0)
-    createButtonBalloonWidget(fr2, "TestBackup", "testBackup", "Do not really do the backups", rowvalue=0, columnvalue=1)
-    createButtonBalloonWidget(fr2, "StopBackup", "stopBackup", "Stop current running backup job", rowvalue=0, columnvalue=2)
+    fr2.rowconfigure(0, weight=1)
+    fr2.columnconfigure(0, weight=1)
+
+    Gapp.textWidget = scrolledtext.ScrolledText(fr2, height=8, wrap=WORD, state=DISABLED)
+    Gapp.textWidget.grid(row=1, column=0, sticky=W+E+N+S)
+    redir = RedirectText(Gapp.textWidget)
+    Gapp.oldstdout = sys.stdout
+    sys.stdout = redir
+
+    # ---------- Create Application Button Widgets --------------------------
+    fr3 = Frame(Gapp.root)
+    fr3.grid(row=2, column=0, sticky=W+E)
+
+    buttonList = [ 
+        # Name          action         HelpText                       row#  col#    visible
+        [ "Run Backup",  "runBackup",   "Begin the backup operation",   0,   0,      NORMAL]  ,
+        [ "TestBackup", "testBackup",  "Do not really do the backups", 0,   1,      NORMAL  ],
+        [ "StopBackup", "stopBackup",  "Stop the backup job",          0,   2,      DISABLED]
+    ]
+    for bdescrip in buttonList:
+        createButtonBalloonWidget(fr3, bdescrip[0], bdescrip[1], bdescrip[2],  rowvalue=bdescrip[3], columnvalue=bdescrip[4], statevalue=bdescrip[5])
 
     # ---------- you can change sytle themes if you wish ----
     #
@@ -217,17 +244,18 @@ def addItemToTreeViewList(source="source", destination="destination", mode="mode
     return item
 
 def key_press(event):
-    print( 'type:{}'.format(event.type))
-    print( 'widget:{}'.format(event.widget))
-    print( 'char: {}'.format(event.char))
-    print( 'keysym: {}'.format(event.keysym))
-    print( 'keycode: {}'.format(event.keycode))    
+    pass
+    #print( 'type:{}'.format(event.type))
+    #print( 'widget:{}'.format(event.widget))
+    #print( 'char: {}'.format(event.char))
+    #print( 'keysym: {}'.format(event.keysym))
+    #print( 'keycode: {}'.format(event.keycode))    
 
 # 
 def stopBackupProcess():
     if Gapp.p1:
         Gapp.p1.terminate()
-        Gapp.widgets["RunBackup"].config(state=NORMAL)
+        Gapp.widgets["Run Backup"].config(state=NORMAL)
         Gapp.widgets["TestBackup"].config(state=NORMAL)
         Gapp.widgets["StopBackup"].config(state=DISABLED)
 
@@ -244,14 +272,13 @@ def btnCallback(param):
             mode = Gapp.treeViewWidget.item(rowItem)['values'][1]
             backupList.append( [sourceFolder, targetFolder, mode] )
     if param=="runBackup":
-        Gapp.widgets["RunBackup"].config(state=DISABLED)
+        Gapp.widgets["Run Backup"].config(state=DISABLED)
         Gapp.widgets["TestBackup"].config(state=DISABLED)
         Gapp.widgets["StopBackup"].config(state=NORMAL)
 
         Gapp.p1 = Process(target=runTheBackup, args=(q, backupList, False, Gapp.skipFiles))
         Gapp.p1.start()
         Gapp.root.after(DELAY1, onGetValue)
-        print(f"Backup Done. Backed up {nCopied} files.")
     elif param=="testBackup":
         nCopied = runTheBackup(None, backupList, True, Gapp.skipFiles)
         print(f"Test Backup Done. This would have backed up {nCopied} files.")
@@ -265,9 +292,11 @@ def btnCallback(param):
         print(f"bntCallback: was passed param={param}")
     return
 
-def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, columnvalue):
+def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, columnvalue, statevalue):
   b=Button(widget, text=name, command=lambda: btnCallback(actionName))
+  widget.columnconfigure(columnvalue, weight=1)
   b.grid(row=rowvalue, column=columnvalue) #, sticky=W)
+  b.config(state=statevalue)
   Gapp.balloon.bind(b, balloonText)
   Gapp.widgets[name] = b
 
@@ -309,6 +338,8 @@ def setVarValue(name,value):
     Gapp.myVarList.append(v)
 
 def runTheBackup(q, backupList, skipbackup, skipFiles):
+    appPrint("runTheBackup was called")
+
     startTime = time.time()
     totalCopies=0
     # Work off of the list in the treeViewWidget and not the backupFileContents here
