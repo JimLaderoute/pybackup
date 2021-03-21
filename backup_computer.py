@@ -1,15 +1,43 @@
 #!C:\Users\wheez\AppData\Local\Programs\Python\Python39\python.exe
-# 
-# Reads in a file of directories/files that we want to be backed up.
-#
-# This app will prompt you for the destination area you wish to backup to.
-# The default area is in a config file.
-#
+# -*- coding: utf-8 -*-
+
+"""
+backup_computer.py
+ 
+Reads in a file that contains backup commands. Each backup command contains 3 items.
+    fromFolder      toBaseFolder    mode
+
+fromFolder:
+    This is the toplevel folder you wish to start you recursive backup operation from.
+
+toBaseFolder:
+    This is the destination toplevel folder to copy the files to.
+
+mode:
+    There are two modes of copying files, relative and substitute
+
+    relative:
+        Takes the fromFolder and appends that to the toBaseFolder path (minus the drive letter)
+
+    substitute:
+        Takes the paths under the specified fromFolder (not including the fromFolder itself)
+        and appends that path to the toBaseFolder to build the new destination file path.
+
+Author: James Laderoute
+Last modified: March 2021
+Website: softwarejim.com
+
+"""
 
 from tkinter import ttk
 from tkinter import *
+from tkinter import (DISABLED, NORMAL)
 from tkinter.ttk import *
 from tkinter import filedialog
+from tkinter import messagebox
+from multiprocessing import Process, Manager, Queue
+from queue import Empty
+
 import os
 import Pmw
 import re # to use regular expressions
@@ -20,9 +48,10 @@ import filecmp
 
 releaseTitle = "BackupComputer"
 releaseVersion = "1.0"
-LongestTime = 0
-LongestFile = ""
+DELAY1 = 80
 
+# Queue must be global
+q = Queue()
 
 class myVar():
     def __init__(self, uname, uvalue):
@@ -46,10 +75,27 @@ class MyApp():
         self.treeViewWidget = None
         self.balloon = None
         self.root.geometry("1200x400")
+        self.widgets = {}
+        self.p1 = None
 
 def exitApplication():
-     Gapp.root.destroy()
-     exit
+    if Gapp.p1 and Gapp.p1.is_alive():
+        messagebox.showwarning(title="Backround process is still running", message="Please wait for backround process to complete")
+    else:
+        Gapp.root.destroy()
+        exit()
+
+def onGetValue():
+    if Gapp.p1.is_alive():
+        Gapp.root.after(DELAY1, onGetValue)
+        return
+    else:
+        try:
+            print( q.get(0))
+            Gapp.widgets["RunBackup"].config(state=NORMAL)
+            Gapp.widgets["TestBackup"].config(state=NORMAL)
+        except Empty:
+            print("queue is empty")
 
 def main():
 
@@ -128,6 +174,7 @@ def main():
     print("Default Backup File: {}".format(Gapp.defaultBackupFile)) 
 
     populateGuiList()
+
     # --------- go into main graphics loop now
     Gapp.root.mainloop()
 
@@ -143,7 +190,7 @@ def populateGuiList():
     for line in Gapp.backupFileContents:
         parts = line.replace('\t', ' ').split()
         if parts[0]=="skipFile":
-            Gapp.skipFiles.append(parts[1])
+            Gapp.skipFiles.append(parts[1].lower())
             continue
         if parts[0]=="set":
             setVarValue(parts[1], normalize(parts[2]))
@@ -174,18 +221,24 @@ def key_press(event):
 # This is a callback function for a PushButton object
 #
 def btnCallback(param):
-    global LongestFile, LongestTime
-
     nCopied = 0
+    backupList = []
+
+    if param in ["runBackup", "testBackup"]:
+        for rowItem in Gapp.treeViewWidget.get_children():
+            sourceFolder = Gapp.treeViewWidget.item(rowItem)['text']
+            targetFolder = Gapp.treeViewWidget.item(rowItem)['values'][0]
+            mode = Gapp.treeViewWidget.item(rowItem)['values'][1]
+            backupList.append( [sourceFolder, targetFolder, mode] )
     if param=="runBackup":
-        LongestTime = 0
-        LongestFile = ""
-        nCopied = runTheBackup(skipbackup=False)
+        Gapp.widgets["RunBackup"].config(state=DISABLED)
+        Gapp.widgets["TestBackup"].config(state=DISABLED)
+        Gapp.p1 = Process(target=runTheBackup, args=(q, backupList, False, Gapp.skipFiles))
+        Gapp.p1.start()
+        Gapp.root.after(DELAY1, onGetValue)
         print(f"Backup Done. Backed up {nCopied} files.")
     elif param=="testBackup":
-        LongestTime = 0
-        LongestFile = ""
-        nCopied = runTheBackup(skipbackup=True)
+        nCopied = runTheBackup(None, backupList, True, Gapp.skipFiles)
         print(f"Test Backup Done. This would have backed up {nCopied} files.")
     elif param=="openBackupFile":
         if openBackupFile():
@@ -198,6 +251,7 @@ def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, c
   b=Button(widget, text=name, command=lambda: btnCallback(actionName))
   b.grid(row=rowvalue, column=columnvalue) #, sticky=W)
   Gapp.balloon.bind(b, balloonText)
+  Gapp.widgets[name] = b
 
 # normalize will substitute $NAMES with a match in the
 # environment variables or in our local variable space.
@@ -236,26 +290,30 @@ def setVarValue(name,value):
     v = myVar(name,value)
     Gapp.myVarList.append(v)
 
-def runTheBackup(skipbackup):
-    mode = ""
+def runTheBackup(q, backupList, skipbackup, skipFiles):
+
+    startTime = time.time()
     totalCopies=0
-    for line in Gapp.backupFileContents:
-        parts = line.replace('\t',' ').split()
-        if parts[0] in [ "skipfile", "set"]:
-            continue
-        if parts[0]=="backup":
-            sourceFolder = normalize(parts[1])
-            targetFolder = normalize(parts[2])
-            mode = parts[3]
-            if skipbackup:
-                print(f"Testing backup of {sourceFolder} to {targetFolder}")
-            if os.path.exists(sourceFolder):
-                copyCount = copyFolder( sourceFolder, targetFolder, mode, skipbackup)
-                totalCopies += copyCount
-                print("Copied {} files.".format(copyCount))
-            else:
-                print("Error: Source Directory Missing: {}".format(sourceFolder))
-    return totalCopies
+    # Work off of the list in the treeViewWidget and not the backupFileContents here
+    for rowItem in backupList:
+        sourceFolder = rowItem[0]
+        targetFolder = rowItem[1]
+        mode = rowItem[2]
+
+        if skipbackup:
+            print(f"Testing backup of {sourceFolder} to {targetFolder}")
+        if os.path.exists(sourceFolder):
+            copyCount = copyFolder( sourceFolder, targetFolder, mode, skipbackup, skipFiles)
+            totalCopies += copyCount
+            print("Copied {} files.".format(copyCount))
+        else:
+            print("Error: Source Directory Missing: {}".format(sourceFolder))
+    endTime = time.time()
+    print("runTheBackup took {} seconds or {} minutes".format(endTime-startTime,(endTime-startTime)/60))
+    if q:
+        q.put(totalCopies)
+    else:
+        return totalCopies
 
 # copyFolder - function that will copy a folder (and all it's files and 
 #               sub-folders and files) to a target base-folder.
@@ -275,16 +333,20 @@ def runTheBackup(skipbackup):
 #   'substitute' :  Takes the paths under the specified sourceRoot that it finds and appends that path
 #                   minus the original sourceRoot to the destination root path.
 #  
-def copyFolder( srcFolderPath, targetBaseFolder, copyMode, skipbackup ):
+def copyFolder( srcFolderPath, targetBaseFolder, copyMode, skipbackup, skipFiles ):
     copiedCount = 0
     srcFolderPath = srcFolderPath.replace("//", '\\')
     print("copyFolder( srcFolderPath={} targetBaseFolder={} copyMode={}".format(srcFolderPath, targetBaseFolder, copyMode))
     # this is a recursive copy operation
     for srcRoot, dirs, files in os.walk(srcFolderPath):
+        nFiles = len(files)
+        nthFile = 0
         for f in files:
-            if f in Gapp.skipFiles:
+            if f.lower() in skipFiles:
+                nFiles -= 1
                 continue
             else:
+                nthFile += 1
                 srcFile = os.path.join(srcRoot, f)
                 if copyMode=="relative":
                     srcRootPath = srcRoot.replace(":","__")
@@ -314,7 +376,7 @@ def copyFolder( srcFolderPath, targetBaseFolder, copyMode, skipbackup ):
                     continue
 
                 if skipbackup:
-                    print(f"\tTesting backup for {srcFile} to {targetFile}")
+                    print(f"\t {nthFile}/{nFiles} Testing backup for {srcFile} to {targetFile}")
 
                 if True==filesAreDifferent(srcFile, targetFile):
                     if skipbackup:
@@ -342,30 +404,8 @@ def checksum(filename, hash_factory=hashlib.md5, chunk_num_blocks=128):
     return h.digest()
 
 def fileHashAreDifferent(srcFile, targetFile):
-    global LongestTime, LongestFile
-
-    byHash = False 
-    if byHash:
-        timestart = time.time()
-        srcHash = checksum(srcFile)
-        targetHash = checksum(targetFile)
-        timeend = time.time()
-        deltaTime = timeend - timestart
-        if deltaTime > LongestTime:
-            LongestTime = deltaTime
-            LongestFile = srcFile
-        print(f"\t\tHash Compare took {deltaTime} seconds.  Longest {LongestTime} for file {LongestFile}")
-        return not (srcHash == targetHash)
-    else:
-        timestart = time.time()
-        isSame = filecmp.cmp(srcFile, targetFile)
-        timeend = time.time()
-        deltaTime = timeend - timestart
-        if deltaTime > LongestTime:
-            LongestTime = deltaTime
-            LongestFile = srcFile
-        print(f"\t\tfilecmp.cmp took {deltaTime} seconds.  Longest {LongestTime} for file {LongestFile}")
-        return not isSame
+    isSame = filecmp.cmp(srcFile, targetFile)
+    return not isSame
 
 def fileSizesAreDifferent(srcFile, targetFile):
     srcSize = os.stat(srcFile).st_size
