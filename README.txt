@@ -2,11 +2,12 @@ Purpose:
 	To backup files from one area to another area.
 
 ToDo:
-- use multiple threads, one thread per toplevel folder
+- use multiple threads, one thread per toplevel folder [future]
+- Have better text in the popup that says background processes are still running. It should
+  say more like you have a Backup job that is still active. Would you like to stop it? Stopping
+  the Backup job means some files may not get backed up.
 - Add ability to SKIP a backup row (without having to remove it). If you know that say the Pictures folder
   would take hours, then maybe you can skip it every other backup that you do.
-- The backup work is now done in a seperate process. We need to add a way to allow the user to ABORT that
-  process if they so desire.
 - Allow Adding and Removing rows from the list
 - Add a Text window area for messages, instead of writting to the console with print()
 - When copy fails, save this info to tell the user the summary of failures when it's done.

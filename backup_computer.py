@@ -91,9 +91,10 @@ def onGetValue():
         return
     else:
         try:
-            print( q.get(0))
             Gapp.widgets["RunBackup"].config(state=NORMAL)
             Gapp.widgets["TestBackup"].config(state=NORMAL)
+            Gapp.widgets["StopBackup"].config(state=DISABLED)
+            print( q.get(0))
         except Empty:
             print("queue is empty")
 
@@ -129,9 +130,12 @@ def main():
     # ---------- Create Widgets --------------------------
     fr2 = Frame(Gapp.root)
     fr2.columnconfigure(0, weight=1)
+    fr2.columnconfigure(1, weight=1)
+    fr2.columnconfigure(2, weight=1)
     fr2.grid(row=1, column=0, sticky=W+E)
     createButtonBalloonWidget(fr2, "RunBackup", "runBackup", "Begin the backup operation",     rowvalue=0, columnvalue=0)
     createButtonBalloonWidget(fr2, "TestBackup", "testBackup", "Do not really do the backups", rowvalue=0, columnvalue=1)
+    createButtonBalloonWidget(fr2, "StopBackup", "stopBackup", "Stop current running backup job", rowvalue=0, columnvalue=2)
 
     # ---------- you can change sytle themes if you wish ----
     #
@@ -218,6 +222,15 @@ def key_press(event):
     print( 'char: {}'.format(event.char))
     print( 'keysym: {}'.format(event.keysym))
     print( 'keycode: {}'.format(event.keycode))    
+
+# 
+def stopBackupProcess():
+    if Gapp.p1:
+        Gapp.p1.terminate()
+        Gapp.widgets["RunBackup"].config(state=NORMAL)
+        Gapp.widgets["TestBackup"].config(state=NORMAL)
+        Gapp.widgets["StopBackup"].config(state=DISABLED)
+
 # This is a callback function for a PushButton object
 #
 def btnCallback(param):
@@ -233,6 +246,8 @@ def btnCallback(param):
     if param=="runBackup":
         Gapp.widgets["RunBackup"].config(state=DISABLED)
         Gapp.widgets["TestBackup"].config(state=DISABLED)
+        Gapp.widgets["StopBackup"].config(state=NORMAL)
+
         Gapp.p1 = Process(target=runTheBackup, args=(q, backupList, False, Gapp.skipFiles))
         Gapp.p1.start()
         Gapp.root.after(DELAY1, onGetValue)
@@ -240,6 +255,9 @@ def btnCallback(param):
     elif param=="testBackup":
         nCopied = runTheBackup(None, backupList, True, Gapp.skipFiles)
         print(f"Test Backup Done. This would have backed up {nCopied} files.")
+    elif param=="stopBackup":
+        stopBackupProcess()
+        print(f"Terminated backup job by user!")
     elif param=="openBackupFile":
         if openBackupFile():
             populateGuiList()
@@ -291,7 +309,6 @@ def setVarValue(name,value):
     Gapp.myVarList.append(v)
 
 def runTheBackup(q, backupList, skipbackup, skipFiles):
-
     startTime = time.time()
     totalCopies=0
     # Work off of the list in the treeViewWidget and not the backupFileContents here
@@ -301,19 +318,22 @@ def runTheBackup(q, backupList, skipbackup, skipFiles):
         mode = rowItem[2]
 
         if skipbackup:
-            print(f"Testing backup of {sourceFolder} to {targetFolder}")
+            appPrint(f"Testing backup of {sourceFolder} to {targetFolder}")
         if os.path.exists(sourceFolder):
             copyCount = copyFolder( sourceFolder, targetFolder, mode, skipbackup, skipFiles)
             totalCopies += copyCount
-            print("Copied {} files.".format(copyCount))
+            appPrint("Copied {} files.".format(copyCount))
         else:
-            print("Error: Source Directory Missing: {}".format(sourceFolder))
+            appPrint("Error: Source Directory Missing: {}".format(sourceFolder))
     endTime = time.time()
-    print("runTheBackup took {} seconds or {} minutes".format(endTime-startTime,(endTime-startTime)/60))
+    appPrint("runTheBackup took {} seconds or {} minutes".format(endTime-startTime,(endTime-startTime)/60))
     if q:
         q.put(totalCopies)
     else:
         return totalCopies
+
+def appPrint( someString ):
+    print(someString)
 
 # copyFolder - function that will copy a folder (and all it's files and 
 #               sub-folders and files) to a target base-folder.
@@ -336,7 +356,7 @@ def runTheBackup(q, backupList, skipbackup, skipFiles):
 def copyFolder( srcFolderPath, targetBaseFolder, copyMode, skipbackup, skipFiles ):
     copiedCount = 0
     srcFolderPath = srcFolderPath.replace("//", '\\')
-    print("copyFolder( srcFolderPath={} targetBaseFolder={} copyMode={}".format(srcFolderPath, targetBaseFolder, copyMode))
+    appPrint(f"copyFolder( srcFolderPath={srcFolderPath} targetBaseFolder={targetBaseFolder} copyMode={copyMode})")
     # this is a recursive copy operation
     for srcRoot, dirs, files in os.walk(srcFolderPath):
         nFiles = len(files)
