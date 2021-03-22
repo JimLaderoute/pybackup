@@ -48,11 +48,12 @@ import hashlib
 import time # so we can time how long it takes to process things
 import filecmp
 
-releaseTitle = "BackupComputer"
+releaseTitle = "Backup Folders"
 releaseVersion = "1.0"
+releaseAuthor = "James Laderoute"
 DELAY1 = 80
 
-# Queue must be global
+# Queue must be global. This is used by the backup sub-process.
 q = Queue()
 
 class RedirectText(object):
@@ -61,6 +62,7 @@ class RedirectText(object):
     def write(self, string):
         Gapp.textWidget.configure(state=NORMAL)
         self.output.insert(END, string)
+        self.output.see("end")
         Gapp.textWidget.configure(state=DISABLED)
 
 class myVar():
@@ -72,12 +74,14 @@ class myVar():
 class MyApp():
     def __init__(self):
         self.root = Tk()
-        self.root.title( releaseTitle + " " + releaseVersion)
+        self.appTitle = f"{releaseTitle} {releaseVersion} by {releaseAuthor}"
+        self.root.title( self.appTitle ) 
         self.root.option_add('*tearOff', False)  # don't allow tear-off menus
         self.root.bind('<KeyPress>', key_press)
         self.root.protocol("WM_DELETE_WINDOW", exitApplication)
         self.myVarList = [] # List of myVar objects; Variables defined/modified from the backup list file
         self.backupFileContents = [] # Every non-comment line inside of the backup list file
+        self.backupType = "" # Backup or "Test Backup"
         self.skipFiles = [] # Filenames that we do not want to backup
         self.defaultBackupFile = "" # This is the backup list file last used by the user
         self.basePath = os.path.dirname(os.path.realpath(__file__))
@@ -102,10 +106,8 @@ def onGetValue():
         return
     else:
         try:
-            Gapp.widgets["Run Backup"].config(state=NORMAL)
-            Gapp.widgets["TestBackup"].config(state=NORMAL)
-            Gapp.widgets["StopBackup"].config(state=DISABLED)
-            print( "Backup Finished. Backed up {} files.".format(q.get(0)))
+            initButtonStates()
+            print( f"{Gapp.backupType} Finished. {q.get(0)} files required backup.")
         except Empty:
             print("queue is empty")
 
@@ -157,9 +159,9 @@ def main():
 
     buttonList = [ 
         # Name          action         HelpText                       row#  col#    visible
-        [ "Run Backup",  "runBackup",   "Begin the backup operation",   0,   0,      NORMAL]  ,
-        [ "TestBackup", "testBackup",  "Do not really do the backups", 0,   1,      NORMAL  ],
-        [ "StopBackup", "stopBackup",  "Stop the backup job",          0,   2,      DISABLED]
+        [ "Start Backup",  "runBackup",   "Begin the backup operation",   0,   0,      NORMAL]  ,
+        [ "Test Backup", "testBackup",  "Do not really do the backups", 0,   1,      NORMAL  ],
+        [ "Stop Backup", "stopBackup",  "Stop the backup job",          0,   2,      DISABLED]
     ]
     for bdescrip in buttonList:
         createButtonBalloonWidget(fr3, bdescrip[0], bdescrip[1], bdescrip[2],  rowvalue=bdescrip[3], columnvalue=bdescrip[4], statevalue=bdescrip[5])
@@ -199,10 +201,8 @@ def main():
     if Gapp.defaultBackupFile:
         if not os.path.exists(Gapp.defaultBackupFile):
             Gapp.defaultBackupFile = os.path.join(Gapp.basePath , Gapp.defaultBackupFile)
-        readBackupFile(Gapp.defaultBackupFile)
-
+        ok = readBackupFile(Gapp.defaultBackupFile)
     print("Config File: {}".format(Gapp.configFileName))
-    print("Default Backup File: {}".format(Gapp.defaultBackupFile)) 
 
     populateGuiList()
 
@@ -252,12 +252,21 @@ def key_press(event):
     #print( 'keycode: {}'.format(event.keycode))    
 
 # 
+def initButtonStates():
+    Gapp.widgets["Start Backup"].config(state=NORMAL)
+    Gapp.widgets["Test Backup"].config(state=NORMAL)
+    Gapp.widgets["Stop Backup"].config(state=DISABLED)
+
+def reverseButtonStates():
+    Gapp.widgets["Start Backup"].config(state=DISABLED)
+    Gapp.widgets["Test Backup"].config(state=DISABLED)
+    Gapp.widgets["Stop Backup"].config(state=NORMAL)
+
+
 def stopBackupProcess():
     if Gapp.p1:
         Gapp.p1.terminate()
-        Gapp.widgets["Run Backup"].config(state=NORMAL)
-        Gapp.widgets["TestBackup"].config(state=NORMAL)
-        Gapp.widgets["StopBackup"].config(state=DISABLED)
+        initButtonStates()
 
 # This is a callback function for a PushButton object
 #
@@ -266,22 +275,22 @@ def btnCallback(param):
     backupList = []
 
     if param in ["runBackup", "testBackup"]:
+        reverseButtonStates()
         for rowItem in Gapp.treeViewWidget.get_children():
             sourceFolder = Gapp.treeViewWidget.item(rowItem)['text']
             targetFolder = Gapp.treeViewWidget.item(rowItem)['values'][0]
             mode = Gapp.treeViewWidget.item(rowItem)['values'][1]
             backupList.append( [sourceFolder, targetFolder, mode] )
     if param=="runBackup":
-        Gapp.widgets["Run Backup"].config(state=DISABLED)
-        Gapp.widgets["TestBackup"].config(state=DISABLED)
-        Gapp.widgets["StopBackup"].config(state=NORMAL)
-
+        Gapp.backupType = "Backup"
         Gapp.p1 = Process(target=runTheBackup, args=(q, backupList, False, Gapp.skipFiles))
         Gapp.p1.start()
         Gapp.root.after(DELAY1, onGetValue)
     elif param=="testBackup":
-        nCopied = runTheBackup(None, backupList, True, Gapp.skipFiles)
-        print(f"Test Backup Done. This would have backed up {nCopied} files.")
+        Gapp.backupType = "Test Backup"
+        Gapp.p1 = Process(target=runTheBackup, args=(q, backupList, True, Gapp.skipFiles))
+        Gapp.p1.start()
+        Gapp.root.after(DELAY1, onGetValue)
     elif param=="stopBackup":
         stopBackupProcess()
         print(f"Terminated backup job by user!")
@@ -477,11 +486,13 @@ def openBackupFile():
         filetypes=[('Backup Files', ['blist'])])
     if filevar == None:
         return False
-    print("filevar is {}".format(filevar))
-    readBackupFile(filevar.name)
-    # update the last backup filename now
-    writeConfigFile("lastfile", filevar.name)
-    return True
+
+    if True==readBackupFile(filevar.name):
+        # update the last backup filename now
+        writeConfigFile("lastfile", filevar.name)
+        return True
+    else:
+        return False
 
 def writeConfigFile(name,value):
     all_of_it = []
@@ -504,12 +515,18 @@ def writeConfigFile(name,value):
 
 # The backup text file contains all the folders on your computer that you wish
 # to be backed up to your destination folder.
+# Returns True or False
 def readBackupFile(filename):
     if not os.path.exists(filename):
-        return
+        return False
+
+    try:
+        f = open(filename, 'r')
+    except:
+        return False
 
     Gapp.backupFileContents.clear()
-    f = open(filename, 'r')
+    Gapp.root.title( f"{Gapp.appTitle} File: {filename}")
     for line in f:
         # chomp line to remove trailing whitespace
         line = line.rstrip()
@@ -519,6 +536,7 @@ def readBackupFile(filename):
             continue
         Gapp.backupFileContents.append(line)
     f.close()
+    return True
 
 # Create the main menubar for the application. This holds all of the category
 # menus for the application and subsequent buttons that will preform the actions.
