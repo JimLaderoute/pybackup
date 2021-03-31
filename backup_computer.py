@@ -36,17 +36,19 @@ from tkinter.ttk import *
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import scrolledtext
-from multiprocessing import Process, Manager, Queue
+from multiprocessing import Process, Manager, Queue, freeze_support
 from queue import Empty
 
 import os
 import sys
-import Pmw
+# The Pmw packages does not play well with pyinstaller 
+#import Pmw
 import re # to use regular expressions
 import shutil
 import hashlib
 import time # so we can time how long it takes to process things
 import filecmp
+
 
 releaseTitle = "Backup Folders"
 releaseVersion = "1.0"
@@ -91,6 +93,7 @@ class MyApp():
         self.root.geometry("1200x400")
         self.widgets = {}
         self.p1 = None
+        self.UsingPmw = False
 
 def exitApplication():
     if Gapp.p1 and Gapp.p1.is_alive():
@@ -98,7 +101,7 @@ def exitApplication():
     else:
         sys.stdout = Gapp.oldstdout
         Gapp.root.destroy()
-        exit("User Exited Application")
+        sys.exit()
 
 def onGetValue():
     if Gapp.p1.is_alive():
@@ -113,9 +116,9 @@ def onGetValue():
 
 def main():
 
-    Pmw.initialise()
-
-    Gapp.balloon = Pmw.Balloon(Gapp.root)
+    if Gapp.UsingPmw:
+        Pmw.initialise()
+        Gapp.balloon = Pmw.Balloon(Gapp.root)
 
     # --------- Create a standard MenuBar ----------------
     mb = createMenuBar(Gapp.root) 
@@ -306,7 +309,8 @@ def createButtonBalloonWidget(widget, name, actionName, balloonText, rowvalue, c
   widget.columnconfigure(columnvalue, weight=1)
   b.grid(row=rowvalue, column=columnvalue) #, sticky=W)
   b.config(state=statevalue)
-  Gapp.balloon.bind(b, balloonText)
+  if Gapp.UsingPmw:
+    Gapp.balloon.bind(b, balloonText)
   Gapp.widgets[name] = b
 
 # normalize will substitute $NAMES with a match in the
@@ -562,6 +566,10 @@ def createMenuBar(root):
     return(menubar)
 
 if __name__ == "__main__":
+    # Calling freeze_support() is need if you end up using pyinstaller to turn this
+    # script into an executable file. If you do not use this, then the Process() method
+    # will re-start this application. It does not hurt things if you do not turn this
+    # into an executable. 
+    freeze_support()
     Gapp = MyApp()
     main()
-

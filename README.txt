@@ -37,4 +37,21 @@ pip3 install Pmw
 
 sudo apt-get install python3-tk
 
+=== CREATE EXE OF YOUR SCRIPT ===
+
+pip3 install Pyinstaller
+pyinstaller.exe --onefile backup_computer.py
+
+This creates folders /build,  /dist
+You can delete the /build folder, it is no longer needed.
+And in the /dist folder you will see backup_computer.exe
+
+NOTE_01: package Pmw does not play nice, so you may need to not use this.
+         Or you might need to run some special script. Do a google search.
+NOTE_02: To prevent Process() from re-starting your script, you need to call freeze_support()
+         from the multiprocessing package. This would only happen if you used pyistaller to
+         create an exe of your script. Not sure if this is only for Windows or not.
+
+
+
 
